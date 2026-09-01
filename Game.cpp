@@ -3,7 +3,8 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
-
+#include <windows.h>
+#include <conio.h>
 namespace {
 int displayWidth(const std::string& s) {
     int w = 0;
@@ -255,6 +256,57 @@ void Game::showMainMenu() {
     } else if (choice == "4") {
         std::cout << "\n愿炼金术的智慧与你同在。再见。\n";
         exit(0);
+    }
+}
+void Game::playVideo(const std::string& filename, const std::string& skipMessage) {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exeDir(exePath);
+    size_t pos = exeDir.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        exeDir = exeDir.substr(0, pos);
+    }
+    std::string fullPath = exeDir + "\\" + filename;
+
+    std::ifstream testFile(fullPath);
+    if (!testFile.good()) {
+        return;
+    }
+    testFile.close();
+
+    std::wstring wFullPath(fullPath.begin(), fullPath.end());
+
+    HINSTANCE result = ShellExecuteW(
+        NULL,
+        L"open",
+        wFullPath.c_str(),
+        NULL,
+        NULL,
+        SW_SHOWNORMAL
+    );
+
+    if ((intptr_t)result <= 32) {
+        std::cout << "无法播放视频文件。\n";
+        return;
+    }
+
+    std::cout << "\n" << skipMessage << "\n";
+    std::cout << "（按任意键跳过...）" << std::flush;
+
+    DWORD startTime = GetTickCount();
+    DWORD maxWaitTime = 5 * 60 * 1000;
+
+    while (true) {
+        if (_kbhit()) {
+            _getch();
+            std::cout << "\n";
+            break;
+        }
+        if (GetTickCount() - startTime > maxWaitTime) {
+            std::cout << "\n";
+            break;
+        }
+        Sleep(100);
     }
 }
 

@@ -37,7 +37,7 @@ private:
     void showMainMenu();
     void showSceneDescription();
     void showEnding();
-
+    void playVideo(const std::string& filename, const std::string& skipMessage);
     void processCommand(const std::string& input);
     std::vector<std::string> tokenize(const std::string& input);
 
