@@ -6,6 +6,7 @@
 #include <fstream>
 #include <algorithm>
 #include <windows.h>
+#include <shellapi.h>
 #include <conio.h>
 
 namespace {
@@ -302,7 +303,7 @@ void Game::showMainMenu() {
         exit(0);
     }
 }
-// 调用播放视频文件，可按键跳过
+// 调用系统默认播放器播放视频，可按键跳过
 void Game::playVideo(const std::string& filename, const std::string& skipMessage)
 {
     // 获取exe所在目录
@@ -316,94 +317,50 @@ void Game::playVideo(const std::string& filename, const std::string& skipMessage
     // 视频完整路径
     std::string fullPath = exeDir + "\\" + filename;
 
-    // 判断文件是否存在
+    // 判断视频文件是否存在
     std::ifstream testFile(fullPath);
-    if (!testFile.good())
-        return;
+    if (!testFile.good()) return;
     testFile.close();
 
-    // 安全转宽字符（支持中文路径）
+    // 安全转宽字符（UTF-8 → UTF-16，支持中文路径）
     auto ToWide = [](const std::string& str) -> std::wstring {
-        int bufLen = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, nullptr, 0);
+        int bufLen = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+        if (bufLen == 0)
+            bufLen = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, nullptr, 0);
+        if (bufLen == 0) return L"";
         std::wstring wstr(bufLen, 0);
-        MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, &wstr[0], bufLen);
+        if (MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], bufLen) == 0)
+            MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, &wstr[0], bufLen);
         return wstr;
     };
 
     std::wstring wVideoPath = ToWide(fullPath);
-    // 播放器路径：mpc-hc.exe 和游戏exe放在同一个文件夹
-    std::wstring playerPath = ToWide(exeDir + "\\mpc-hc.exe");
+    std::wstring wExeDir = ToWide(exeDir);
 
-    // 启动参数：播放器打开视频。路径含空格必须加引号，否则CreateProcess会把首个空格前当作exe路径
-    std::wstring cmdLine = L"\"" + playerPath + L"\" \"" + wVideoPath + L"\"";
+    // 用 ShellExecuteW 调用系统默认播放器打开视频
+    HINSTANCE seResult = ShellExecuteW(
+        nullptr, L"open", wVideoPath.c_str(),
+        nullptr, wExeDir.c_str(), SW_SHOWNORMAL);
 
-    // CreateProcess 创建进程，保存句柄
-    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
-    PROCESS_INFORMATION pi{};
-
-    BOOL createOk = CreateProcessW(
-        nullptr,
-        &cmdLine[0],
-        nullptr,
-        nullptr,
-        FALSE,
-        0,
-        nullptr,
-        nullptr,
-        &si,
-        &pi
-    );
-
-    if (!createOk)
-    {
-        std::cout << "无法启动播放器\n";
+    if (reinterpret_cast<intptr_t>(seResult) <= 32) {
+        // 播放失败，静默跳过（不阻断游戏流程）
         return;
     }
 
-    // 输出跳过提示
+    // 播放器启动成功，等待按键跳过
     std::cout << "\n" << skipMessage << "\n";
-    std::cout << "（按任意键跳过...）" << std::flush;
+    std::cout << "（按任意键继续...）" << std::flush;
 
-    DWORD startTime = GetTickCount();
-    const DWORD maxWaitTime = 5 * 60 * 1000;
-    bool skipByKey = false;
+    Sleep(300);
+    HWND consoleWnd = GetConsoleWindow();
+    if (consoleWnd) {
+        SetForegroundWindow(consoleWnd);
+    }
 
-    while (true)
-    {
-        // 检测按键跳过
-        if (_kbhit())
-        {
-            _getch();
-            skipByKey = true;
-            break;
-        }
-        // 超时自动退出等待
-        if (GetTickCount() - startTime > maxWaitTime)
-        {
-            break;
-        }
-        // 如果播放器自己关闭了（进程结束），直接跳出
-        DWORD exitCode = 0;
-        if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
-        {
-            break;
-        }
-
+    while (!_kbhit()) {
         Sleep(100);
     }
-
-    // 杀掉播放器进程
-    DWORD exitCode{};
-    if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode == STILL_ACTIVE)
-    {
-        TerminateProcess(pi.hProcess, 0);
-        WaitForSingleObject(pi.hProcess, INFINITE);
-    }
-
-    // 关闭句柄
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-
+    _getch();
     std::cout << "\n";
 }
 
@@ -1225,11 +1182,22 @@ void Game::onCorrectPassword() {
     std::cout << "\n";
 }
 
-// 密码错误：累计3次则掉落线索纸条并自动填数字防卡死
+// 密码错误：累计3次则掉落线索纸条并自动填数字防卡死；超过5次铁门锁死
 void Game::onWrongPassword() {
     passwordAttempts_++;
     COUTLN(Color::Error, "铁门发出沉闷的拒绝声，密码错误。");
-    COUTLN(Color::Mute, "（已尝试 " + std::to_string(passwordAttempts_) + " 次）");
+    COUTLN(Color::Mute, "（已尝试 " + std::to_string(passwordAttempts_) + " / 5 次）");
+
+    if (passwordAttempts_ >= 5) {
+        std::cout << "\n";
+        COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        COUTLN(Color::Error, "  铁门因多次错误输入而永久锁死！");
+        COUTLN(Color::Narration, "  你被困在了赫尔墨斯的书房中，试炼失败...");
+        COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        std::cout << "\n";
+        state_ = GameState::GameOver;
+        return;
+    }
 
     if (passwordAttempts_ >= 3 && !hintNoteDropped_) {
         hintNoteDropped_ = true;
