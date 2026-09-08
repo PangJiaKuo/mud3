@@ -1,6 +1,7 @@
-// Game类实现：MUD密室逃脱游戏主逻辑
+// Game 实现：密室逃脱游戏全部逻辑
+// 核心流程：主菜单 → 探索收集四元素 → 提取数字 → 输入密码 → 按压符号 → 通关
 #include "Game.h"
-#include<string>
+#include <string>
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -10,8 +11,11 @@
 #include <conio.h>
 
 namespace {
-// ====== 颜色工具：基于 Windows Console API ======
-// 颜色枚举（对应 FOREGROUND_* 常量按位组合）
+// ═══════════════════════════════════════════════════════════════
+//  颜色工具：Windows Console API 实现控制台彩色输出
+// ═══════════════════════════════════════════════════════════════
+
+// 前景色枚举 —— 按 FOREGROUND_* 位组合，不同场景用不同颜色区分
 enum class Color : WORD {
     Default   = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,            // 白
     Title     = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY,      // 亮青：标题/边框
@@ -25,7 +29,7 @@ enum class Color : WORD {
     Mute      = FOREGROUND_INTENSITY,                                           // 暗灰：次要信息
 };
 
-// RAII：构造时设色，析构时还原默认
+// RAII 颜色作用域：构造时设色，析构时自动还原默认色
 struct ColorScope {
     ColorScope(Color c) {
         HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -37,39 +41,43 @@ struct ColorScope {
     }
 };
 
-// 便捷输出宏：ColorScope + std::cout，单行
-#define COUT(c, x) do { ColorScope _cs(c); std::cout << x; } while(0)
+// 带颜色输出宏 —— COUT 不换行，COUTLN 换行
+#define COUT(c, x)   do { ColorScope _cs(c); std::cout << x; } while(0)
 #define COUTLN(c, x) do { ColorScope _cs(c); std::cout << x << "\n"; } while(0)
 
-// 计算字符串显示宽度（中文2，英文1）
+// 计算字符串显示宽度（中文 2 列，英文 1 列，用于对齐）
 int displayWidth(const std::string& s) {
     int w = 0;
     for (size_t i = 0; i < s.size(); ) {
         unsigned char c = s[i];
-        if (c < 0x80)       { w += 1; i += 1; }
-        else if ((c & 0xE0) == 0xC0) { w += 2; i += 2; }
-        else if ((c & 0xF0) == 0xE0) { w += 2; i += 3; }
-        else                { w += 2; i += 4; }
+        if (c < 0x80)                { w += 1; i += 1; }          // ASCII
+        else if ((c & 0xE0) == 0xC0) { w += 2; i += 2; }          // 2字节 UTF-8
+        else if ((c & 0xF0) == 0xE0) { w += 2; i += 3; }          // 3字节 UTF-8（中文）
+        else                         { w += 2; i += 4; }          // 4字节 UTF-8
     }
     return w;
 }
 
-// 右侧填充空格至指定显示宽度
+// 右对齐：左侧补空格至指定宽度
 std::string padRight(const std::string& s, int width) {
     int dw = displayWidth(s);
     if (dw >= width) return s;
     return s + std::string(width - dw, ' ');
 }
 
-// 居中对齐至指定显示宽度
+// 居中对齐
 std::string centerText(const std::string& s, int width) {
     int dw = displayWidth(s);
     if (dw >= width) return s;
-    int left = (width - dw) / 2;
+    int left  = (width - dw) / 2;
     int right = width - dw - left;
     return std::string(left, ' ') + s + std::string(right, ' ');
 }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  构造 / 初始化
+// ═══════════════════════════════════════════════════════════════
 
 Game::Game()
     : state_(GameState::Menu), phase_(PuzzlePhase::Exploring),
@@ -81,7 +89,7 @@ Game::Game()
 
 Game::~Game() {}
 
-// 初始化场景中所有物品：工具、元素、线索、杂物、铁门
+// 创建场景中所有物品：4 工具 + 4 元素 + 4 线索 + 5 场景装饰 + 铁门 + 石台
 void Game::initWorld() {
     worldItems_.clear();
     worldItemOrder_.clear();
@@ -202,7 +210,7 @@ void Game::initWorld() {
     addItem(stoneTable);
 }
 
-// 初始化各类进度标志
+// 初始化进度标志：全部 false，羊皮纸和已检查羊皮纸为 true（开局即拥有）
 void Game::initGameFlags() {
     flags_["got_shovel"] = false;
     flags_["got_net"] = false;
@@ -219,8 +227,11 @@ void Game::initGameFlags() {
     flags_["wind_collected"] = false;
 }
 
-// 主循环：根据状态分发到菜单/游戏/结局
+// ═══════════════════════════════════════════════════════════════
+//  主循环：状态机驱动 —— 菜单 / 游戏 / 通关 / 失败
+// ═══════════════════════════════════════════════════════════════
 void Game::run() {
+    // 环境氛围文本池（每5回合随机轮播一条）
     ambientMessages_ = {
         "壁灯的火焰摇曳着，在墙上投下跳动的影子。",
         "水族箱里的鱼撞了一下玻璃，发出轻柔的声响。",
@@ -257,7 +268,11 @@ void Game::run() {
     }
 }
 
-// 主菜单：开始新游戏/读档/说明/退出
+// ═══════════════════════════════════════════════════════════════
+//  界面：菜单 / 视频 / 开场 / 场景 / 结局
+// ═══════════════════════════════════════════════════════════════
+
+// 主菜单：选 1 新游戏 → showIntro，选 2 读档，选 3 帮助，选 4 退出
 void Game::showMainMenu() {
     constexpr int kInner = 46;
     std::string border;
@@ -303,7 +318,7 @@ void Game::showMainMenu() {
         exit(0);
     }
 }
-// 调用系统默认播放器播放视频，可按键跳过
+// 用 ShellExecuteW 调用系统默认播放器打开视频，视频不存在或失败则静默跳过
 void Game::playVideo(const std::string& filename, const std::string& skipMessage)
 {
     // 获取exe所在目录
@@ -349,7 +364,7 @@ void Game::playVideo(const std::string& filename, const std::string& skipMessage
 
     // 播放器启动成功，等待按键跳过
     std::cout << "\n" << skipMessage << "\n";
-    std::cout << "（按任意键继续...）" << std::flush;
+    std::cout << "（按回车键继续...）" << std::flush;
 
     Sleep(300);
     HWND consoleWnd = GetConsoleWindow();
@@ -364,9 +379,9 @@ void Game::playVideo(const std::string& filename, const std::string& skipMessage
     std::cout << "\n";
 }
 
-// 开场剧情介绍
+// 开场剧情：播放视频 → 旁白介绍背景 → 显示场景
 void Game::showIntro() {
-    playVideo("opening.mp4", "按任意键跳过开场动画");
+    playVideo("opening.mp4", "按回车键跳过开场动画");
     std::cout << "\n";
     COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     std::cout << "\n";
@@ -386,7 +401,7 @@ void Game::showIntro() {
     showSceneDescription();
 }
 
-// 显示当前场景可互动区域
+// 显示场景中所有可互动区域（7 个固定点位 + 动态掉落的线索纸条）
 void Game::showSceneDescription() {
     std::cout << "\n";
     COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -434,9 +449,9 @@ void Game::showSceneDescription() {
     std::cout << "\n";
 }
 
-// 通关结局文本
+// 通关结局：播放视频 → 赫尔墨斯出场 → 获得四元素徽章
 void Game::showEnding() {
-    playVideo("ending.mp4", "按任意键跳过结局动画");
+    playVideo("ending.mp4", "按回车键跳过结局动画");
     std::cout << "\n";
     COUTLN(Color::Title, "══════════════════════════════════════════════");
     COUTLN(Color::Title, "                 通关结局                    ");
@@ -462,12 +477,12 @@ void Game::showEnding() {
     std::cout << "\n";
 
     COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    COUTLN(Color::System, "  恭喜通关！");
+    COUTLN(Color::System, "  年轻人，欢迎进入炼坤世界……  ");
     COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     std::cout << "\n";
 }
 
-// 命令分发：首词识别指令，其余作为参数
+// 命令分发：首词识别指令名，剩余作为参数
 void Game::processCommand(const std::string& input) {
     std::vector<std::string> tokens = tokenize(input);
     if (tokens.empty()) return;
@@ -504,7 +519,7 @@ void Game::processCommand(const std::string& input) {
     }
 }
 
-// 按空白拆分输入为token
+// 按空白拆分输入
 std::vector<std::string> Game::tokenize(const std::string& input) {
     std::vector<std::string> tokens;
     std::stringstream ss(input);
@@ -515,7 +530,7 @@ std::vector<std::string> Game::tokenize(const std::string& input) {
     return tokens;
 }
 
-// 观察：查看物品详情，对元素物品触发数字提取
+// 观察：查看物品详情 → 对元素物品触发数字提取 → 特殊物品触发事件（无字书→风羽毛）
 void Game::cmdObserve(const std::vector<std::string>& args) {
     if (args.empty()) {
         COUTLN(Color::Hint, "请告诉我要观察什么。");
@@ -594,7 +609,7 @@ void Game::cmdObserve(const std::vector<std::string>& args) {
     }
 }
 
-// 拾取：工具类直接收入背包，元素/场景物件不可直接拿
+// 拾取：工具类收入背包，Misc/Key/Clue 不可直接拿，元素需用工具获取
 void Game::cmdTake(const std::vector<std::string>& args) {
     if (args.empty()) {
         COUTLN(Color::Hint, "请告诉我要拿什么。");
@@ -668,7 +683,7 @@ void Game::cmdTake(const std::vector<std::string>& args) {
     std::cout << "你拿起了" << item->getName() << "。\n";
 }
 
-// 使用工具作用于目标：铲子挖土、渔网捞水、火钳翻灰、放大镜观察
+// 使用工具：铲子挖盆栽→地石板 / 渔网捞水族箱→水贝壳 / 火钳翻壁炉→火铁片 / 放大镜观察元素→提取数字
 void Game::cmdUse(const std::vector<std::string>& args) {
     if (args.empty()) {
         COUTLN(Color::Hint, "请指定工具和目标。例如：'用 小铲子 盆栽'");
@@ -832,7 +847,7 @@ void Game::cmdUse(const std::vector<std::string>& args) {
     std::cout << "（提示：使用 '观察' 命令查看物品，使用 '拿' 拾取工具。）\n";
 }
 
-// 向铁门输入4位密码：正确密码4231
+// 向铁门输入4位密码：正确密码 4231（地4水2火3风1，按地水火风顺序排列）
 void Game::cmdEnter(const std::vector<std::string>& args) {
     if (args.empty()) {
         COUTLN(Color::Hint, "请输入密码。例如：'输入 4231'");
@@ -856,6 +871,13 @@ void Game::cmdEnter(const std::vector<std::string>& args) {
         }
     }
 
+    // 必须完成数字提取才能输入密码，防止跳过探索过程直接猜 4231
+    if (phase_ < PuzzlePhase::HaveAllNumbers) {
+        COUTLN(Color::Error, "铁门上的数字圆盘纹丝不动。");
+        COUTLN(Color::Hint, "它没有感应到四元素の力量。");
+        return;
+    }
+
     if (input == "4231") {
         onCorrectPassword();
     } else {
@@ -863,10 +885,10 @@ void Game::cmdEnter(const std::vector<std::string>& args) {
     }
 }
 
-// 按压铁门元素符号：必须按地→水→火→风顺序
+// 按压铁门元素符号：必须按 地→水→火→风 顺序，错则全部归位
 void Game::cmdPress(const std::vector<std::string>& args) {
     if (args.empty()) {
-        COUTLN(Color::Hint, "请选择要按压的元素符号。可选项：地、水、火、风");
+        COUTLN(Color::Hint, "请选择要按压的元素符号。可选の元素：地、水、火、风");
         return;
     }
 
@@ -916,7 +938,7 @@ void Game::cmdPress(const std::vector<std::string>& args) {
     }
 }
 
-// 根据当前阶段输出引导提示
+// 根据当前谜题阶段输出引导提示（防卡死）
 void Game::cmdHint() {
     COUTLN(Color::Hint, "\n【提示系统】");
     std::cout << "\n";
@@ -973,7 +995,7 @@ void Game::cmdHint() {
             }
             std::cout << "\n";
             COUTLN(Color::System, "按 地→水→火→风 顺序排列即可得到密码。");
-            COUTLN(Color::System, "使用 '输入' 命令提交密码，例如：输入 4231");
+            COUTLN(Color::System, "使用 '输入' 命令提交密码，例如：输入 3412");
         }
     }
 
@@ -988,7 +1010,7 @@ void Game::cmdHint() {
     }
 }
 
-// 保存进度到 savegame.dat
+// 保存进度到 savegame.dat（二进制格式）
 void Game::cmdSave() {
     try {
         saveToFile();
@@ -998,7 +1020,7 @@ void Game::cmdSave() {
     }
 }
 
-// 从存档加载进度
+// 从 savegame.dat 读取进度（二进制格式）
 void Game::cmdLoad() {
     try {
         loadFromFile();
@@ -1119,6 +1141,7 @@ void Game::extractNumberFromItem(Item& item) {
     COUT(Color::Narration, "你仔细观察" + item.getName() + "，");
     COUTLN(Color::Narration, "注意到" + item.getNumberClue());
     COUTLN(Color::System, "由此你推断出，这件物品隐藏的数字是：" + std::to_string(num));
+
     std::cout << "\n";
 
     checkAllNumbersExtracted();
@@ -1177,7 +1200,6 @@ void Game::onCorrectPassword() {
     COUTLN(Color::Narration, "  铁门内传来机括转动的声响，");
     COUTLN(Color::Item, "  四个元素符号依次亮起！");
     COUTLN(Color::Hint, "  现在按正确顺序依次按压四个元素符号：");
-    COUTLN(Color::System, "  地 → 水 → 火 → 风");
     COUTLN(Color::Title, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     std::cout << "\n";
 }
