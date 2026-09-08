@@ -1,11 +1,14 @@
+// Item类实现：物品的属性存取与状态管理
 #include "Item.h"
 
+// 默认构造：空物品，类型Misc
 Item::Item()
     : name_(""), description_(""), detailedDesc_(""),
       type_(ItemType::Misc), elementType_(ElementType::None),
       hiddenNumber_(0), numberClue_(""), hiddenText_(""), hint_(""),
       collected_(false), examined_(false), used_(false), location_("") {}
 
+// 带参构造：指定名称、描述、类型
 Item::Item(const std::string& name, const std::string& description, ItemType type)
     : name_(name), description_(description), detailedDesc_(""),
       type_(type), elementType_(ElementType::None),
@@ -55,14 +58,17 @@ const std::map<std::string, std::string>& Item::getInteractions() const {
     return interactions_;
 }
 
+// 记录工具对该物品的作用结果
 void Item::addInteraction(const std::string& tool, const std::string& result) {
     interactions_[tool] = result;
 }
 
+// 按名称判等（用于查找/去重）
 bool Item::operator==(const Item& other) const {
     return name_ == other.name_;
 }
 
+// 按名称排序（用于有序容器）
 bool Item::operator<(const Item& other) const {
     return name_ < other.name_;
 }

@@ -1,11 +1,15 @@
+// Game类实现：MUD密室逃脱游戏主逻辑
 #include "Game.h"
+#include<string>
 #include <iostream>
 #include <sstream>
 #include <fstream>
 #include <algorithm>
 #include <windows.h>
 #include <conio.h>
+
 namespace {
+// 计算字符串显示宽度（中文2，英文1）
 int displayWidth(const std::string& s) {
     int w = 0;
     for (size_t i = 0; i < s.size(); ) {
@@ -18,12 +22,14 @@ int displayWidth(const std::string& s) {
     return w;
 }
 
+// 右侧填充空格至指定显示宽度
 std::string padRight(const std::string& s, int width) {
     int dw = displayWidth(s);
     if (dw >= width) return s;
     return s + std::string(width - dw, ' ');
 }
 
+// 居中对齐至指定显示宽度
 std::string centerText(const std::string& s, int width) {
     int dw = displayWidth(s);
     if (dw >= width) return s;
@@ -43,10 +49,12 @@ Game::Game()
 
 Game::~Game() {}
 
+// 初始化场景中所有物品：工具、元素、线索、杂物、铁门
 void Game::initWorld() {
     worldItems_.clear();
     worldItemOrder_.clear();
 
+    // 工具物品加入场景
     auto addItem = [this](const Item& item) {
         worldItems_[item.getName()] = item;
         worldItemOrder_.push_back(item.getName());
@@ -67,6 +75,7 @@ void Game::initWorld() {
     tongs.setDetailedDesc("厚重的铁钳，适合翻动壁炉中的灰烬。尖端发黑发亮，显然经常与火焰为伴。");
     addItem(tongs);
 
+    // 四元素：地水火风，各自隐藏数字
     Item earthStone("地石板", "巴掌大的青石，正面刻着一个'地'字。", ItemType::Element);
     earthStone.setElementType(ElementType::Earth);
     earthStone.setLocation("盆栽土壤下");
@@ -148,6 +157,7 @@ void Game::initWorld() {
     desk.setDetailedDesc("书桌上散落【日记本】【放大镜】和笔墨纸砚等杂物，在旁边还有一卷异常显眼的【羊皮纸】。抽屉未上锁，里面有一把【小铲子】。");
     addItem(desk);
 
+    // 铁门：最终机关，需输入密码并按序按压元素符号
     Item ironDoor("铁门", "厚重铸铁的门，表面刻有四元素符号。", ItemType::Key);
     ironDoor.setLocation("唯一的出口");
     ironDoor.setDetailedDesc("铁门上有四个可旋转的数字圆盘（0-9），下方是四个圆形凹槽，分别刻着地、水、火、风四个元素符号。门紧紧锁着。");
@@ -160,6 +170,7 @@ void Game::initWorld() {
     addItem(stoneTable);
 }
 
+// 初始化各类进度标志
 void Game::initGameFlags() {
     flags_["got_shovel"] = false;
     flags_["got_net"] = false;
@@ -176,6 +187,7 @@ void Game::initGameFlags() {
     flags_["wind_collected"] = false;
 }
 
+// 主循环：根据状态分发到菜单/游戏/结局
 void Game::run() {
     ambientMessages_ = {
         "壁灯的火焰摇曳着，在墙上投下跳动的影子。",
@@ -213,6 +225,7 @@ void Game::run() {
     }
 }
 
+// 主菜单：开始新游戏/读档/说明/退出
 void Game::showMainMenu() {
     constexpr int kInner = 46;
     std::string border;
@@ -258,58 +271,112 @@ void Game::showMainMenu() {
         exit(0);
     }
 }
-void Game::playVideo(const std::string& filename, const std::string& skipMessage) {
+// 调用系统默认程序播放视频文件，可按键跳过
+void Game::playVideo(const std::string& filename, const std::string& skipMessage)
+{
+    // 获取exe所在目录
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
     std::string exeDir(exePath);
     size_t pos = exeDir.find_last_of("\\/");
-    if (pos != std::string::npos) {
+    if (pos != std::string::npos)
         exeDir = exeDir.substr(0, pos);
-    }
+
+    // 视频完整路径
     std::string fullPath = exeDir + "\\" + filename;
 
+    // 判断文件是否存在
     std::ifstream testFile(fullPath);
-    if (!testFile.good()) {
+    if (!testFile.good())
         return;
-    }
     testFile.close();
 
-    std::wstring wFullPath(fullPath.begin(), fullPath.end());
+    // 安全转宽字符（支持中文路径）
+    auto ToWide = [](const std::string& str) -> std::wstring {
+        int bufLen = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, nullptr, 0);
+        std::wstring wstr(bufLen, 0);
+        MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, &wstr[0], bufLen);
+        return wstr;
+    };
 
-    HINSTANCE result = ShellExecuteW(
-        NULL,
-        L"open",
-        wFullPath.c_str(),
-        NULL,
-        NULL,
-        SW_SHOWNORMAL
+    std::wstring wVideoPath = ToWide(fullPath);
+    // 播放器路径：mpc‑hc.exe 和游戏exe放在同一个文件夹
+    std::wstring playerPath = ToWide(exeDir + "\\mpc‑hc.exe");
+
+    // 启动参数：播放器打开视频
+    std::wstring cmdLine = playerPath + L" \"" + wVideoPath + L"\"";
+
+    // CreateProcess 创建进程，保存句柄
+    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+    PROCESS_INFORMATION pi{};
+
+    BOOL createOk = CreateProcessW(
+        nullptr,
+        &cmdLine[0],
+        nullptr,
+        nullptr,
+        FALSE,
+        0,
+        nullptr,
+        nullptr,
+        &si,
+        &pi
     );
 
-    if ((intptr_t)result <= 32) {
-        std::cout << "无法播放视频文件。\n";
+    if (!createOk)
+    {
+        std::cout << "无法启动播放器\n";
         return;
     }
 
+    // 输出跳过提示
     std::cout << "\n" << skipMessage << "\n";
     std::cout << "（按任意键跳过...）" << std::flush;
 
     DWORD startTime = GetTickCount();
-    DWORD maxWaitTime = 5 * 60 * 1000;
+    const DWORD maxWaitTime = 5 * 60 * 1000;
+    bool skipByKey = false;
 
-    while (true) {
-        if (_kbhit()) {
+    while (true)
+    {
+        // 检测按键跳过
+        if (_kbhit())
+        {
             _getch();
-            std::cout << "\n";
+            skipByKey = true;
             break;
         }
-        if (GetTickCount() - startTime > maxWaitTime) {
-            std::cout << "\n";
+        // 超时自动退出等待
+        if (GetTickCount() - startTime > maxWaitTime)
+        {
             break;
         }
+        // 如果播放器自己关闭了（进程结束），直接跳出
+        DWORD exitCode = 0;
+        if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
+        {
+            break;
+        }
+
         Sleep(100);
     }
+
+    // 杀掉播放器进程
+    DWORD exitCode{};
+    if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode == STILL_ACTIVE)
+    {
+        TerminateProcess(pi.hProcess, 0);
+        WaitForSingleObject(pi.hProcess, INFINITE);
+    }
+
+    // 关闭句柄
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    std::cout << "\n";
 }
 
+// 开场剧情介绍
 void Game::showIntro() {
     std::cout << "\n";
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
@@ -320,12 +387,14 @@ void Game::showIntro() {
     std::cout << "书房的门虚掩着，你推门而入，满目皆是古籍、仪器与奇异的标本。\n";
     std::cout << "正当你惊叹时，身后的门\"咔嗒\"一声自动锁死。\n\n";
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    playVideo("opening.mp4", "按任意键跳过开场动画");
     std::cout << "  试炼开始！\n";
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
     showSceneDescription();
 }
 
+// 显示当前场景可互动区域
 void Game::showSceneDescription() {
     std::cout << "\n";
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -368,7 +437,9 @@ void Game::showSceneDescription() {
     std::cout << "输入 '提示' 获取当前进度提示\n\n";
 }
 
+// 通关结局文本
 void Game::showEnding() {
+    playVideo("ending.mp4", "按任意键跳过结局动画");
     std::cout << "\n";
     std::cout << "══════════════════════════════════════════════\n";
     std::cout << "                 通关结局                    \n";
@@ -393,6 +464,7 @@ void Game::showEnding() {
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 }
 
+// 命令分发：首词识别指令，其余作为参数
 void Game::processCommand(const std::string& input) {
     std::vector<std::string> tokens = tokenize(input);
     if (tokens.empty()) return;
@@ -429,6 +501,7 @@ void Game::processCommand(const std::string& input) {
     }
 }
 
+// 按空白拆分输入为token
 std::vector<std::string> Game::tokenize(const std::string& input) {
     std::vector<std::string> tokens;
     std::stringstream ss(input);
@@ -439,6 +512,7 @@ std::vector<std::string> Game::tokenize(const std::string& input) {
     return tokens;
 }
 
+// 观察：查看物品详情，对元素物品触发数字提取
 void Game::cmdObserve(const std::vector<std::string>& args) {
     if (args.empty()) {
         std::cout << "请告诉我要观察什么。\n";
@@ -514,6 +588,7 @@ void Game::cmdObserve(const std::vector<std::string>& args) {
     }
 }
 
+// 拾取：工具类直接收入背包，元素/场景物件不可直接拿
 void Game::cmdTake(const std::vector<std::string>& args) {
     if (args.empty()) {
         std::cout << "请告诉我要拿什么。\n";
@@ -587,6 +662,7 @@ void Game::cmdTake(const std::vector<std::string>& args) {
     std::cout << "你拿起了" << item->getName() << "。\n";
 }
 
+// 使用工具作用于目标：铲子挖土、渔网捞水、火钳翻灰、放大镜观察
 void Game::cmdUse(const std::vector<std::string>& args) {
     if (args.empty()) {
         std::cout << "请指定工具和目标。例如：'用 小铲子 盆栽'\n";
@@ -750,6 +826,7 @@ void Game::cmdUse(const std::vector<std::string>& args) {
     std::cout << "（提示：使用 '观察' 命令查看物品，使用 '拿' 拾取工具。）\n";
 }
 
+// 向铁门输入4位密码：正确密码4231
 void Game::cmdEnter(const std::vector<std::string>& args) {
     if (args.empty()) {
         std::cout << "请输入密码。例如：'输入 4231'\n";
@@ -780,6 +857,7 @@ void Game::cmdEnter(const std::vector<std::string>& args) {
     }
 }
 
+// 按压铁门元素符号：必须按地→水→火→风顺序
 void Game::cmdPress(const std::vector<std::string>& args) {
     if (args.empty()) {
         std::cout << "请选择要按压的元素符号。可选项：地、水、火、风\n";
@@ -832,6 +910,7 @@ void Game::cmdPress(const std::vector<std::string>& args) {
     }
 }
 
+// 根据当前阶段输出引导提示
 void Game::cmdHint() {
     std::cout << "\n【提示系统】\n\n";
 
@@ -897,6 +976,7 @@ void Game::cmdHint() {
     }
 }
 
+// 保存进度到 savegame.dat
 void Game::cmdSave() {
     try {
         saveToFile();
@@ -906,6 +986,7 @@ void Game::cmdSave() {
     }
 }
 
+// 从存档加载进度
 void Game::cmdLoad() {
     try {
         loadFromFile();
@@ -917,6 +998,7 @@ void Game::cmdLoad() {
     }
 }
 
+// 重新开始：清空进度并回到开场
 void Game::cmdRestart() {
     std::cout << "确定要重新开始游戏吗？（当前进度将丢失）[y/n]: ";
     std::string confirm;
@@ -985,6 +1067,7 @@ void Game::cmdInventory() {
     }
 }
 
+// 精确名匹配失败时退化为子串匹配
 Item* Game::findWorldItem(const std::string& name) {
     auto it = worldItems_.find(name);
     if (it != worldItems_.end()) return &it->second;
@@ -1009,6 +1092,7 @@ const Item* Game::findWorldItem(const std::string& name) const {
     return nullptr;
 }
 
+// 观察元素物品：标记已观察并记录隐藏数字
 void Game::extractNumberFromItem(Item& item) {
     item.setExamined(true);
     if (item.getType() != ItemType::Element) return;
@@ -1025,6 +1109,7 @@ void Game::extractNumberFromItem(Item& item) {
     checkAllNumbersExtracted();
 }
 
+// 检查四元素数字是否已全部提取，若是则推进阶段
 void Game::checkAllNumbersExtracted() {
     ElementType elements[] = {ElementType::Earth, ElementType::Water, ElementType::Fire, ElementType::Wind};
     bool allExtracted = std::all_of(std::begin(elements), std::end(elements),
@@ -1044,6 +1129,7 @@ void Game::checkAllNumbersExtracted() {
     }
 }
 
+// 检查四元素是否集齐，若是则推进到HaveAllElements阶段
 void Game::checkAllElementsCollected() {
     ElementType elements[] = {ElementType::Earth, ElementType::Water, ElementType::Fire, ElementType::Wind};
     bool allCollected = std::all_of(std::begin(elements), std::end(elements),
@@ -1060,6 +1146,7 @@ void Game::checkAllElementsCollected() {
     }
 }
 
+// 密码正确：进入按压符号阶段
 void Game::onCorrectPassword() {
     passwordSolved_ = true;
     phase_ = PuzzlePhase::PasswordEntered;
@@ -1074,6 +1161,7 @@ void Game::onCorrectPassword() {
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 }
 
+// 密码错误：累计3次则掉落线索纸条并自动填数字防卡死
 void Game::onWrongPassword() {
     passwordAttempts_++;
     std::cout << "铁门发出沉闷的拒绝声，密码错误。\n";
@@ -1178,6 +1266,7 @@ std::string Game::toLower(const std::string& str) const {
     return result;
 }
 
+// 二进制保存：背包、元素、数字、阶段、标志、按压序列
 void Game::saveToFile(const std::string& filename) {
     std::ofstream file(filename, std::ios::binary);
     if (!file.is_open()) {
@@ -1247,6 +1336,7 @@ void Game::saveToFile(const std::string& filename) {
     file.close();
 }
 
+// 二进制读取：重建世界后再恢复背包/元素/阶段/标志
 void Game::loadFromFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
@@ -1368,6 +1458,7 @@ void Game::loadFromFile(const std::string& filename) {
     file.close();
 }
 
+// 轮询返回环境氛围文本（每5回合触发一次）
 std::string Game::getAmbientMessage() const {
     if (ambientMessages_.empty()) return "";
     std::string msg = ambientMessages_[ambientIndex_ % ambientMessages_.size()];

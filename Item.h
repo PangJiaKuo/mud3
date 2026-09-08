@@ -6,14 +6,16 @@
 #include <vector>
 #include <iostream>
 
+// 物品类型
 enum class ItemType {
-    Tool,
-    Element,
-    Clue,
-    Key,
-    Misc
+    Tool,     // 工具：铲子、渔网等
+    Element,  // 元素：地水火风
+    Clue,     // 线索：日记、羊皮纸等
+    Key,      // 关键道具：铁门
+    Misc      // 杂物：场景装饰
 };
 
+// 元素类型
 enum class ElementType {
     None,
     Earth,
@@ -34,7 +36,7 @@ public:
     const std::string& getDescription() const;
     void setDescription(const std::string& desc);
 
-    const std::string& getDetailedDesc() const;
+    const std::string& getDetailedDesc() const;   // 观察时显示的详细描述
     void setDetailedDesc(const std::string& desc);
 
     ItemType getType() const;
@@ -43,10 +45,10 @@ public:
     ElementType getElementType() const;
     void setElementType(ElementType elem);
 
-    int getHiddenNumber() const;
+    int getHiddenNumber() const;                  // 元素隐藏的数字
     void setHiddenNumber(int num);
 
-    const std::string& getNumberClue() const;
+    const std::string& getNumberClue() const;    // 数字线索描述
     void setNumberClue(const std::string& clue);
 
     const std::string& getHiddenText() const;
@@ -58,7 +60,7 @@ public:
     bool isCollected() const;
     void setCollected(bool v);
 
-    bool isExamined() const;
+    bool isExamined() const;                      // 是否已观察并提取数字
     void setExamined(bool v);
 
     bool isUsed() const;
@@ -70,7 +72,7 @@ public:
     const std::map<std::string, std::string>& getInteractions() const;
     void addInteraction(const std::string& tool, const std::string& result);
 
-    bool operator==(const Item& other) const;
+    bool operator==(const Item& other) const;     // 按名称比较
     bool operator<(const Item& other) const;
 
 private:
