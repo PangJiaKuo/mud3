@@ -363,8 +363,8 @@ void Game::playVideo(const std::string& filename, const std::string& skipMessage
     }
 
     // 播放器启动成功，等待按键跳过
-    std::cout << "\n" << skipMessage << "\n";
-    std::cout << "（按回车键继续...）" << std::flush;
+    COUTLN(Color::Hint, "\n" + std::string(skipMessage));
+    COUT(Color::Mute, "（按回车键继续...）");
 
     Sleep(300);
     HWND consoleWnd = GetConsoleWindow();
@@ -638,8 +638,8 @@ void Game::cmdTake(const std::vector<std::string>& args) {
     }
 
     if (item->getName() == "无字书") {
-        std::cout << "你拿起了无字书。\n";
-        std::cout << "但更重要的是——你注意到了书中夹着的东西！\n";
+        COUTLN(Color::Narration, "你拿起了无字书。");
+        COUTLN(Color::System, "但更重要的是——你注意到了书中夹着的东西！");
         if (!flags_["wind_collected"]) {
             flags_["wind_collected"] = true;
             if (worldItems_.find("风羽毛") != worldItems_.end() && !worldItems_["风羽毛"].isCollected()) {
@@ -647,7 +647,7 @@ void Game::cmdTake(const std::vector<std::string>& args) {
                 player_.addItem(worldItems_["风羽毛"]);
                 player_.collectElement(ElementType::Wind);
                 checkAllElementsCollected();
-                std::cout << "一根灰色羽毛从书中滑落——上面刻着'风'字！\n";
+                COUTLN(Color::Narration, "一根灰色羽毛从书中滑落——上面刻着'风'字！");
                 COUTLN(Color::Item, "你获得了元素：【风】。");
             }
         }
@@ -657,7 +657,7 @@ void Game::cmdTake(const std::vector<std::string>& args) {
     }
 
     if (item->isCollected()) {
-        std::cout << "你已经拿过" << item->getName() << "了。\n";
+        COUTLN(Color::Mute, "你已经拿过" + item->getName() + "了。");
         return;
     }
 
@@ -680,7 +680,7 @@ void Game::cmdTake(const std::vector<std::string>& args) {
         std::remove(worldItemOrder_.begin(), worldItemOrder_.end(), item->getName()),
         worldItemOrder_.end());
 
-    std::cout << "你拿起了" << item->getName() << "。\n";
+    COUTLN(Color::System, "你拿起了" + item->getName() + "。");
 }
 
 // 使用工具：铲子挖盆栽→地石板 / 渔网捞水族箱→水贝壳 / 火钳翻壁炉→火铁片 / 放大镜观察元素→提取数字
@@ -748,7 +748,7 @@ void Game::cmdUse(const std::vector<std::string>& args) {
     if (!target) {
         const Item* playerItem = player_.findItem(actualTargetName);
         if (playerItem) {
-            std::cout << "你使用" << actualToolName << "没有什么作用。\n";
+            COUTLN(Color::Mute, "你使用" + actualToolName + "没有什么作用。");
         } else {
             COUTLN(Color::Error, "没有找到'" + actualTargetName + "'。");
         }
@@ -770,10 +770,10 @@ void Game::cmdUse(const std::vector<std::string>& args) {
             }
             return;
         } else if (target->getName() == "壁炉") {
-            std::cout << "壁炉太过坚硬，铲子派不上用场。\n";
+            COUTLN(Color::Mute, "壁炉太过坚硬，铲子派不上用场。");
             return;
         } else if (target->getName() == "水族箱") {
-            std::cout << "水族箱里都是水，铲子帮不上忙。\n";
+            COUTLN(Color::Mute, "水族箱里都是水，铲子帮不上忙。");
             return;
         } else if (target->getName() == "书桌" || target->getName() == "抽屉") {
             COUTLN(Color::Hint, "抽屉没有上锁，直接用手拉开即可。");
@@ -788,11 +788,11 @@ void Game::cmdUse(const std::vector<std::string>& args) {
                 player_.addItem(worldItems_["水贝壳"]);
                 player_.collectElement(ElementType::Water);
                 checkAllElementsCollected();
-                std::cout << "你将渔网探入水族箱，在沙砾间捞起了一枚螺旋贝壳——上面刻着'水'字！\n";
+                COUTLN(Color::Narration, "你将渔网探入水族箱，在沙砾间捞起了一枚螺旋贝壳——上面刻着'水'字！");
                 COUTLN(Color::Item, "你获得了元素：【水】。");
                 target->setUsed(true);
             } else {
-                std::cout << "你在水族箱中捞了一阵，什么也没找到。\n";
+                COUTLN(Color::Mute, "你在水族箱中捞了一阵，什么也没找到。");
             }
             return;
         } else if (target->getName() == "壁炉") {
@@ -819,10 +819,10 @@ void Game::cmdUse(const std::vector<std::string>& args) {
             }
             return;
         } else if (target->getName() == "水族箱") {
-            std::cout << "火钳无法用来操作水族箱。\n";
+            COUTLN(Color::Error, "火钳无法用来操作水族箱。");
             return;
         } else if (target->getName() == "盆栽") {
-            std::cout << "火钳不适合挖掘。\n";
+            COUTLN(Color::Error, "火钳不适合挖掘。");
             return;
         }
     }
@@ -836,15 +836,15 @@ void Game::cmdUse(const std::vector<std::string>& args) {
                 COUTLN(Color::Hint, "你用放大镜仔细查看，但已经没有新的发现了。");
             }
         } else if (target->getType() == ItemType::Element) {
-            std::cout << "你需要先获取这件物品才能仔细观察。\n";
+            COUTLN(Color::Hint, "你需要先获取这件物品才能仔细观察。");
         } else {
             COUTLN(Color::Hint, "放大镜在这里没有帮助。");
         }
         return;
     }
 
-    std::cout << "你不知道如何用" << actualToolName << "来操作" << actualTargetName << "。\n";
-    std::cout << "（提示：使用 '观察' 命令查看物品，使用 '拿' 拾取工具。）\n";
+    COUTLN(Color::Hint, "你不知道如何用" + actualToolName + "来操作" + actualTargetName + "。");
+    COUTLN(Color::Hint, "（提示：使用 '观察' 命令查看物品，使用 '拿' 拾取工具。）");
 }
 
 // 向铁门输入4位密码：正确密码 4231（地4水2火3风1，按地水火风顺序排列）
@@ -860,13 +860,13 @@ void Game::cmdEnter(const std::vector<std::string>& args) {
     }
 
     if (input.length() != 4) {
-        std::cout << "密码需要是4位数字。你输入的是：" << input << "\n";
+        COUTLN(Color::Error, "密码需要是4位数字。你输入的是：" + input);
         return;
     }
 
     for (char c : input) {
         if (!isdigit(static_cast<unsigned char>(c))) {
-            std::cout << "密码只能包含数字。\n";
+            COUTLN(Color::Error, "密码只能包含数字。");
             return;
         }
     }
@@ -917,14 +917,14 @@ void Game::cmdPress(const std::vector<std::string>& args) {
     ElementType expectedOrder[] = {ElementType::Earth, ElementType::Water, ElementType::Fire, ElementType::Wind};
     size_t nextIndex = pressedSymbols_.size();
     if (nextIndex >= 4) {
-        std::cout << "所有符号都已按下。\n";
+        COUTLN(Color::Hint, "所有符号都已按下。");
         return;
     }
 
     ElementType expected = expectedOrder[nextIndex];
     if (elem != expected) {
         COUTLN(Color::Error, "元素符号发出刺耳的摩擦声，拒绝被按下。");
-        std::cout << "（顺序不对，符号归位了。所有符号弹回原位。）\n";
+        COUTLN(Color::Mute, "（顺序不对，符号归位了。所有符号弹回原位。）");
         pressedSymbols_.clear();
         return;
     }
